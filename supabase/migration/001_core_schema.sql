@@ -14,6 +14,7 @@ CREATE TABLE public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
 -- 2. PRODUCTS
 
 CREATE TABLE public.products (
@@ -28,7 +29,36 @@ CREATE TABLE public.products (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. PRODUCT VARIANTS
+
+-- 3. TAXES
+
+CREATE TABLE public.taxes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    name TEXT NOT NULL,
+
+    rate NUMERIC(5,2) NOT NULL
+        CHECK (rate >= 0 AND rate <= 100),
+
+    -- NULL product_id means global tax
+    product_id UUID REFERENCES public.products(id)
+        ON DELETE CASCADE,
+
+    valid_from DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_until DATE,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT valid_tax_dates CHECK (
+        valid_until IS NULL OR valid_until >= valid_from
+    )
+);
+
+
+-- 4. PRODUCT VARIANTS
 
 CREATE TABLE public.product_variants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -48,7 +78,8 @@ CREATE TABLE public.product_variants (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. SUBSCRIPTION PLANS
+
+-- 5. SUBSCRIPTION PLANS
 
 CREATE TABLE public.subscription_plans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -81,7 +112,7 @@ CREATE TABLE public.subscription_plans (
 );
 
 
--- 5. SUBSCRIPTIONS
+-- 6. SUBSCRIPTIONS
 
 CREATE TABLE public.subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -91,6 +122,9 @@ CREATE TABLE public.subscriptions (
 
     plan_id UUID NOT NULL
         REFERENCES public.subscription_plans(id),
+
+    payment_terms INTEGER NOT NULL DEFAULT 0
+        CHECK (payment_terms BETWEEN 0 AND 90),
 
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (
@@ -123,7 +157,7 @@ CREATE TABLE public.subscriptions (
 );
 
 
--- 6. SUBSCRIPTION ITEMS
+-- 7. SUBSCRIPTION ITEMS
 
 CREATE TABLE public.subscription_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -133,6 +167,9 @@ CREATE TABLE public.subscription_items (
 
     variant_id UUID NOT NULL
         REFERENCES public.product_variants(id),
+
+    tax_id UUID REFERENCES public.taxes(id)
+        ON DELETE SET NULL,
 
     quantity INTEGER NOT NULL DEFAULT 1
         CHECK (quantity > 0),
@@ -147,7 +184,7 @@ CREATE TABLE public.subscription_items (
 );
 
 
--- 7. INVOICES
+-- 8. INVOICES
 
 CREATE TABLE public.invoices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -209,7 +246,7 @@ CREATE TABLE public.invoices (
 );
 
 
--- 8. INVOICE ITEMS
+-- 9. INVOICE ITEMS
 
 CREATE TABLE public.invoice_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -224,6 +261,8 @@ CREATE TABLE public.invoice_items (
 
     unit_price NUMERIC(12,2) NOT NULL
         CHECK (unit_price >= 0),
+
+    tax_name TEXT,
 
     tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0
         CHECK (tax_rate >= 0 AND tax_rate <= 100),
@@ -241,7 +280,7 @@ CREATE TABLE public.invoice_items (
 );
 
 
--- 9. DISCOUNTS
+-- 10. DISCOUNTS
 
 CREATE TABLE public.discounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -296,7 +335,7 @@ CREATE TABLE public.discounts (
 );
 
 
--- 10. SUBSCRIPTION DISCOUNTS
+-- 11. SUBSCRIPTION DISCOUNTS
 
 CREATE TABLE public.subscription_discounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -313,7 +352,7 @@ CREATE TABLE public.subscription_discounts (
 );
 
 
--- 11. PAYMENTS
+-- 12. PAYMENTS
 
 CREATE TABLE public.payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -359,7 +398,7 @@ CREATE TABLE public.payments (
 );
 
 
--- 12. PAYMENT TRANSACTIONS
+-- 13. PAYMENT TRANSACTIONS
 
 CREATE TABLE public.payment_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -386,6 +425,13 @@ ON public.profiles(role);
 -- Products
 CREATE INDEX idx_product_variants_product
 ON public.product_variants(product_id);
+
+-- Taxes
+CREATE INDEX idx_taxes_product_id
+ON public.taxes(product_id);
+
+CREATE INDEX idx_taxes_active
+ON public.taxes(is_active);
 
 -- Plans
 CREATE INDEX idx_subscription_plans_active
@@ -466,40 +512,54 @@ BEFORE UPDATE ON public.profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
+
 CREATE TRIGGER set_products_updated_at
 BEFORE UPDATE ON public.products
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
+
+
+CREATE TRIGGER set_taxes_updated_at
+BEFORE UPDATE ON public.taxes
+FOR EACH ROW
+EXECUTE FUNCTION public.set_updated_at();
+
 
 CREATE TRIGGER set_product_variants_updated_at
 BEFORE UPDATE ON public.product_variants
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
+
 CREATE TRIGGER set_subscription_plans_updated_at
 BEFORE UPDATE ON public.subscription_plans
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
+
 
 CREATE TRIGGER set_subscriptions_updated_at
 BEFORE UPDATE ON public.subscriptions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
+
 CREATE TRIGGER set_subscription_items_updated_at
 BEFORE UPDATE ON public.subscription_items
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
+
 
 CREATE TRIGGER set_invoices_updated_at
 BEFORE UPDATE ON public.invoices
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
+
 CREATE TRIGGER set_discounts_updated_at
 BEFORE UPDATE ON public.discounts
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
+
 
 CREATE TRIGGER set_payments_updated_at
 BEFORE UPDATE ON public.payments
